@@ -1,61 +1,65 @@
-# Video Feed Recommender
+# Рекомендательная система для видеоленты
 
-Production-oriented pet project for a personalized short-video commerce feed.
-It demonstrates the complete DS loop: point-in-time data preparation, candidate
-retrieval, sequence-aware neural ranking, business-aware diversification,
-online serving, offline evaluation and A/B-test analysis.
+Портфолио-проект рекомендательной системы для персонализированной ленты коротких
+товарных видео. Он демонстрирует полный цикл работы Data Scientist: подготовку
+данных без утечки из будущего, отбор кандидатов, нейросетевое ранжирование с
+учётом последовательности действий, управление разнообразием, онлайн-сервис,
+офлайн-оценку и анализ A/B-теста.
 
-> The project is not affiliated with Ozon. All demo data is synthetic.
+> Проект не связан с Ozon. Все демонстрационные данные синтетические.
 
-## Why this project is relevant
+## Почему проект соответствует вакансии
 
-The repository mirrors the responsibilities of a full-cycle recommendation DS:
+Репозиторий воспроизводит основные задачи Data Scientist рекомендательной команды:
 
-- **candidate retrieval** — a two-tower PyTorch model with normalized vectors,
-  ready for an ANN index;
-- **neural ranking** — a Transformer encodes recent behavior and a multi-task
-  head predicts watch and purchase probabilities;
-- **multimodality** — video embeddings enter both retrieval and ranking stages;
-- **product constraints** — the final utility combines engagement, purchase
-  intent and ad value, then applies maximum-marginal-relevance diversification;
-- **experimentation** — NDCG, Recall, coverage, intra-list diversity and a
-  CUPED-enabled A/B-test analyzer;
-- **data platform** — point-in-time ClickHouse SQL, an example PySpark feature
-  job and an Airflow DAG;
-- **production path** — typed FastAPI contract, artifact loading, Docker and CI.
+- **отбор кандидатов** — двухбашенная модель PyTorch с нормализованными векторами,
+  готовыми для индекса приближённого поиска ближайших соседей;
+- **нейросетевое ранжирование** — Transformer кодирует историю поведения, а
+  многозадачная голова предсказывает вероятности просмотра и покупки;
+- **мультимодальность** — векторные представления видео используются и при
+  отборе кандидатов, и при ранжировании;
+- **продуктовые ограничения** — итоговая полезность объединяет вовлечённость,
+  намерение купить и рекламную ценность, после чего применяется MMR-диверсификация;
+- **эксперименты** — NDCG, Recall, покрытие категорий, внутрисписочное разнообразие
+  и анализатор A/B-теста с методом CUPED;
+- **платформа данных** — SQL для ClickHouse без утечки таргета, пример расчёта
+  признаков в PySpark и DAG для Airflow;
+- **вывод в эксплуатацию** — типизированный контракт FastAPI, загрузка артефакта
+  модели, Docker и непрерывная интеграция.
 
-## Architecture
-
-```text
-events ──► Spark / SQL features ──► training set
-                                         │
-catalog + video embeddings ──► two-tower retrieval ──► ANN candidates
-                                                          │
-recent user sequence ──► Transformer ranker ──► P(watch), P(purchase)
-                                                          │
-                              utility + MMR diversification ──► feed
-                                                          │
-                         offline metrics + CUPED A/B analysis
-```
-
-## Model
-
-The ranker encodes up to 50 recent interactions with a Transformer. Candidate
-item, category, dense and video features interact with the user vector through
-concatenation, element-wise product and absolute distance. Two heads optimize:
+## Архитектура
 
 ```text
-L = 0.65 · BCE(watch) + 0.35 · BCE(purchase)
+события ──► признаки Spark / SQL ──► обучающая выборка
+                                            │
+каталог + векторы видео ──► двухбашенный отбор ──► ANN-кандидаты
+                                                         │
+история пользователя ──► Transformer-ранкер ──► P(просмотр), P(покупка)
+                                                         │
+                         полезность + MMR-диверсификация ──► лента
+                                                         │
+                         офлайн-метрики + CUPED-анализ A/B-теста
 ```
 
-The final online utility is intentionally separate from learned logits so that
-product weights can be audited and changed without retraining:
+## Модель
+
+Ранкер кодирует до 50 последних взаимодействий пользователя с помощью
+Transformer. Признаки товара, категории, числовые признаки и представление видео
+сопоставляются с вектором пользователя через конкатенацию, поэлементное
+произведение и абсолютную разность. Две головы оптимизируют функцию потерь:
 
 ```text
-utility = 0.58 · P(watch) + 0.34 · P(purchase) + 0.08 · normalized_ad_CPM
+L = 0.65 · BCE(просмотр) + 0.35 · BCE(покупка)
 ```
 
-## Quick start
+Итоговая продуктовая полезность намеренно отделена от логитов модели. Поэтому
+веса можно проверять и менять без повторного обучения:
+
+```text
+полезность = 0.58 · P(просмотр) + 0.34 · P(покупка) + 0.08 · нормализованный_CPM
+```
+
+## Быстрый старт
 
 ```bash
 python -m venv .venv
@@ -65,42 +69,44 @@ python -m pip install -e ".[dev]"
 video-recsys --train-steps 10 --artifact artifacts/demo.pt
 ```
 
-Run the API:
+Запуск API:
 
 ```bash
 uvicorn video_recsys.api:app --reload
 ```
 
-Swagger UI: `http://127.0.0.1:8000/docs`; ranking endpoint: `POST /v1/rank`.
+Интерактивная документация Swagger доступна по адресу
+`http://127.0.0.1:8000/docs`; точка ранжирования — `POST /v1/rank`.
 
-## Quality gates
+## Проверка качества
 
 ```bash
 ruff check .
 pytest --cov=video_recsys
 ```
 
-Tests cover gradient flow and output shapes, normalized retrieval embeddings,
-MMR behavior, ranking metrics, CUPED variance reduction, uplift detection and
-the HTTP contract.
+Тесты проверяют прохождение градиента и размерности тензоров, нормировку векторов
+двухбашенной модели, поведение MMR, метрики ранжирования, снижение дисперсии через
+CUPED, обнаружение статистически значимого эффекта и HTTP-контракт.
 
-## Important engineering decisions
+## Важные инженерные решения
 
-1. **No target leakage:** SQL and Spark windows end before the current impression.
-2. **Multi-task targets:** watch quality and shopping intent remain observable
-   separately instead of being collapsed into one label.
-3. **Business policy outside the network:** revenue weighting and diversity are
-   explicit, testable post-processing stages.
-4. **Train/serve parity:** one typed `RankingBatch` is used by training and serving.
-5. **Honest scope:** the checked-in model is trained on synthetic data; the project
-   demonstrates architecture and engineering, not production metric claims.
+1. **Нет утечки таргета:** временные окна SQL и Spark заканчиваются до текущего показа.
+2. **Несколько целевых событий:** качество просмотра и намерение купить остаются
+   отдельными наблюдаемыми величинами, а не объединяются в одну метку.
+3. **Продуктовая политика вне нейросети:** вес рекламной выручки и разнообразие
+   реализованы как явные и тестируемые этапы постобработки.
+4. **Совпадение обучения и применения:** один типизированный `RankingBatch`
+   используется при обучении и в сервисе.
+5. **Честные ограничения:** модель обучается на синтетических данных. Репозиторий
+   демонстрирует архитектуру и инженерную реализацию, а не заявляет продуктовые метрики.
 
-## Next experiments
+## Возможные эксперименты
 
-- sampled-softmax retrieval training and FAISS/HNSW serving;
-- causal debiasing for position and selection bias;
-- PyTorch Lightning + Hydra experiment configuration;
-- Triton ensemble for retrieval and ranking;
-- sequential counterfactual evaluation before online rollout;
-- Go gateway with request coalescing and strict latency budgets.
+- обучение отбора кандидатов с sampled softmax и применение FAISS/HNSW;
+- причинная коррекция смещения позиции и смещения отбора;
+- конфигурация экспериментов через PyTorch Lightning и Hydra;
+- ансамбль моделей в Nvidia Triton;
+- последовательная контрфактическая оценка перед онлайн-запуском;
+- шлюз на Go с объединением запросов и строгим бюджетом задержки.
 
